@@ -20,6 +20,8 @@ import torch.nn.functional as F
 from core.wing import FAN
 import torch_npu
 
+
+
 class ResBlk(nn.Module):
     def __init__(self, dim_in, dim_out, actv=nn.LeakyReLU(0.2),
                  normalize=False, downsample=False):
@@ -286,10 +288,13 @@ def build_model(args):
         device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
     else:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    # net
     generator = nn.DataParallel(Generator(device, args.img_size, args.style_dim, w_hpf=args.w_hpf))
     mapping_network = nn.DataParallel(MappingNetwork(args.latent_dim, args.style_dim, args.num_domains))
     style_encoder = nn.DataParallel(StyleEncoder(args.img_size, args.style_dim, args.num_domains))
     discriminator = nn.DataParallel(Discriminator(args.img_size, args.num_domains))
+
+    # nets_ema
     generator_ema = copy.deepcopy(generator)
     mapping_network_ema = copy.deepcopy(mapping_network)
     style_encoder_ema = copy.deepcopy(style_encoder)

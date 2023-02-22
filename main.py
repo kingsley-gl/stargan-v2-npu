@@ -82,17 +82,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
-    # ascend dist argument
-    parser.add_argument('--device', default='npu', type=str, help='npu or gpu')
-    parser.add_argument('--addr', default='127.0.0.1', type=str, help='master addr')
-    parser.add_argument('--device_list', default='0,1,2,3,4,5,6,7', type=str, help='device id list')
-    parser.add_argument('--amp', default=False, action='store_true', help='use amp to train the model')
-    parser.add_argument('--loss_scale', default=1024., type=float,
-                        help='loss scale using in amp, default -1 means dynamic')
-    parser.add_argument('--opt_level', default='O2', type=str,
-                        help='loss scale using in amp, default -1 means dynamic')
-    parser.add_argument('--dist_backend', default='hccl', type=str,
-                        help='distributed backend')
+
 
     # model arguments
     parser.add_argument('--img_size', type=int, default=256,
@@ -189,7 +179,25 @@ if __name__ == '__main__':
     parser.add_argument('--save_every', type=int, default=10000)
     parser.add_argument('--eval_every', type=int, default=50000)
 
+
+    # ascend dist argument
+    parser.add_argument('--device', default='npu', type=str, help='npu or gpu')
+    parser.add_argument('--npu', type=int, default=0)
+    parser.add_argument('--rank', type=int, default=0)
+
+    parser.add_argument('--amp', default=False, action='store_true', help='use amp to train the model')
+    parser.add_argument('--addr', default='127.0.0.1', type=str, help='master addr')
+    parser.add_argument('--distribute', default=False, action='store_true', help='distribute training')
+    parser.add_argument('--device_list', default='0,1,2,3,4,5,6,7', type=str, help='device id list')
+    parser.add_argument('--world_size', default=1, type=int, help='number of nodes for distributed training')
+    parser.add_argument('--device_num', default=1, type=int, help='multi NPU parameter, GPU or CPU do not modify')
+    parser.add_argument('--dist_backend', default='hccl', type=str,
+                        help='distributed backend')
+    parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
+    parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
+
     args = parser.parse_args()
     os.environ['MASTER_ADDR'] = args.addr
-    os.environ['MASTER_PORT'] = '5001'
+    os.environ['MASTER_PORT'] = '29688'
+    args.npu_ddp = (args.device_num > 1 or args.world_size > 1)
     main(args)

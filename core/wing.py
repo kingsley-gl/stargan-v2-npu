@@ -10,7 +10,7 @@ Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 Lines (19 to 80) were adapted from https://github.com/1adrianb/face-alignment
 Lines (83 to 235) were adapted from https://github.com/protossw512/AdaptiveWingLoss
 """
-
+import pdb
 from collections import namedtuple
 from copy import deepcopy
 from functools import partial
@@ -47,14 +47,15 @@ def get_preds_fromhm(hm):
 
 
 class HourGlass(nn.Module):
-    def __init__(self, num_modules, depth, num_features, first_one=False):
+    def __init__(self, num_modules, depth, num_features, first_one=False, device=None):
         super(HourGlass, self).__init__()
+        self.device = device
         self.num_modules = num_modules
         self.depth = depth
         self.features = num_features
         self.coordconv = CoordConvTh(64, 64, True, True, 256, first_one,
                                      out_channels=256,
-                                     kernel_size=1, stride=1, padding=0)
+                                     kernel_size=1, stride=1, padding=0, device=self.device)
         self._generate_network(self.depth)
 
     def _generate_network(self, level):
@@ -89,11 +90,12 @@ class HourGlass(nn.Module):
 
 
 class AddCoordsTh(nn.Module):
-    def __init__(self, height=64, width=64, with_r=False, with_boundary=False):
+    def __init__(self, height=64, width=64, with_r=False, with_boundary=False, device=None):
         super(AddCoordsTh, self).__init__()
+        self.device = device
         self.with_r = with_r
         self.with_boundary = with_boundary
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        # device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
         with torch.no_grad():
             x_coords = torch.arange(height).unsqueeze(1).expand(height, width).float()
@@ -107,9 +109,9 @@ class AddCoordsTh(nn.Module):
                 rr = (rr / torch.max(rr)).unsqueeze(0)
                 coords = torch.cat([coords, rr], dim=0)
 
-            self.coords = coords.unsqueeze(0).to(device)  # (1, 2 or 3, height, width)
-            self.x_coords = x_coords.to(device)
-            self.y_coords = y_coords.to(device)
+            self.coords = coords.unsqueeze(0).to(self.device)  # (1, 2 or 3, height, width)
+            self.x_coords = x_coords.to(self.device)
+            self.y_coords = y_coords.to(self.device)
 
     def forward(self, x, heatmap=None):
         """
@@ -123,7 +125,7 @@ class AddCoordsTh(nn.Module):
             xx_boundary_channel = torch.where(boundary_channel > 0.05, self.x_coords, zero_tensor).to(zero_tensor.device)
             yy_boundary_channel = torch.where(boundary_channel > 0.05, self.y_coords, zero_tensor).to(zero_tensor.device)
             coords = torch.cat([coords, xx_boundary_channel, yy_boundary_channel], dim=1)
-
+        # breakpoint()
         x_and_coords = torch.cat([x, coords], dim=1)
         return x_and_coords
 
@@ -131,9 +133,10 @@ class AddCoordsTh(nn.Module):
 class CoordConvTh(nn.Module):
     """CoordConv layer as in the paper."""
     def __init__(self, height, width, with_r, with_boundary,
-                 in_channels, first_one=False, *args, **kwargs):
+                 in_channels, first_one=False, device=None, *args, **kwargs):
         super(CoordConvTh, self).__init__()
-        self.addcoords = AddCoordsTh(height, width, with_r, with_boundary)
+        self.device = device
+        self.addcoords = AddCoordsTh(height, width, with_r, with_boundary, self.device)
         in_channels += 2
         if with_r:
             in_channels += 1
@@ -196,14 +199,14 @@ class FAN(nn.Module):
         # Base part
         self.conv1 = CoordConvTh(256, 256, True, False,
                                  in_channels=3, out_channels=64,
-                                 kernel_size=7, stride=2, padding=3)
+                                 kernel_size=7, stride=2, padding=3, device=self.device)
         self.bn1 = nn.BatchNorm2d(64)
         self.conv2 = ConvBlock(64, 128)
         self.conv3 = ConvBlock(128, 128)
         self.conv4 = ConvBlock(128, 256)
 
         # Stacking part
-        self.add_module('m0', HourGlass(1, 4, 256, first_one=True))
+        self.add_module('m0', HourGlass(1, 4, 256, first_one=True, device=self.device))
         self.add_module('top_m_0', ConvBlock(256, 256))
         self.add_module('conv_last0', nn.Conv2d(256, 256, 1, 1, 0))
         self.add_module('bn_end0', nn.BatchNorm2d(256))
@@ -262,6 +265,7 @@ class FAN(nn.Module):
         ''' outputs 0-1 normalized heatmap '''
         x = F.interpolate(x, size=256, mode='bilinear')
         x_01 = x*0.5 + 0.5
+        # pdb.set_trace()
         outputs, _ = self(x_01)
         heatmaps = outputs[-1][:, :-1, :, :]
         scale_factor = x.size(2) // heatmaps.size(2)

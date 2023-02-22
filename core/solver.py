@@ -23,7 +23,7 @@ from core.data_loader import InputFetcher
 import core.utils as utils
 from metrics.eval import calculate_metrics
 import torch_npu
-
+from apex import amp
 
 class Solver(nn.Module):
     def __init__(self, args):
@@ -33,6 +33,12 @@ class Solver(nn.Module):
             self.device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
         else:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        torch.npu.set_device(self.args.npu)
+        if self.args.distribute:
+            torch_npu.npu.set_device(self.args.rank)
+            torch.distributed.init_process_group(backend=self.args.dist_backend,
+                                                 world_size=self.args.world_size,
+                                                 rank=self.args.rank)
         self.nets, self.nets_ema = build_model(args)
         # below setattrs are to make networks be children of Solver, e.g., for self.to(self.device)
         for name, module in self.nets.items():
@@ -51,6 +57,8 @@ class Solver(nn.Module):
                     lr=args.f_lr if net == 'mapping_network' else args.lr,
                     betas=[args.beta1, args.beta2],
                     weight_decay=args.weight_decay)
+
+
 
             self.ckptios = [
                 CheckpointIO(r'/'.join([args.checkpoint_dir, '{:06d}_nets.ckpt']), device=self.device,
@@ -104,16 +112,17 @@ class Solver(nn.Module):
         start_time = time.time()
         for i in range(args.resume_iter, args.total_iters):
             # fetch images and labels
+            # ------------- preprocess input data
             inputs = next(fetcher)
             x_real, y_org = inputs.x_src, inputs.y_src
             x_ref, x_ref2, y_trg = inputs.x_ref, inputs.x_ref2, inputs.y_ref
             z_trg, z_trg2 = inputs.z_trg, inputs.z_trg2
 
-            masks = nets.fan.get_heatmap(x_real) if args.w_hpf > 0 else None
+            # masks = nets.fan.get_heatmap(x_real) if args.w_hpf > 0 else None
+            masks = None
 
             # train the discriminator
-            d_loss, d_losses_latent = compute_d_loss(
-                nets, args, x_real, y_org, y_trg, z_trg=z_trg, masks=masks)
+            d_loss, d_losses_latent = compute_d_loss(nets, args, x_real, y_org, y_trg, z_trg=z_trg, masks=masks)
             self._reset_grad()
             d_loss.backward()
             optims.discriminator.step()
@@ -288,8 +297,12 @@ def adv_loss(logits, target):
 def r1_reg(d_out, x_in):
     # zero-centered gradient penalty for real images
     batch_size = x_in.size(0)
+    with torch.no_grad():
+        d_out_sum = d_out.sum()
+    print(d_out_sum)
     grad_dout = torch.autograd.grad(
         outputs=d_out.sum(), inputs=x_in,
+        # outputs=d_out_sum, inputs=x_in,
         create_graph=True, retain_graph=True, only_inputs=True
     )[0]
     grad_dout2 = grad_dout.pow(2)
