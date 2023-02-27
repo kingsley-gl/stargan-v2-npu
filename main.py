@@ -14,10 +14,12 @@ import argparse
 from munch import Munch
 from torch.backends import cudnn
 import torch
+import torch.multiprocessing as mp
 
 from core.data_loader import get_train_loader
 from core.data_loader import get_test_loader
 from core.solver import Solver
+
 
 def str2bool(v):
     return v.lower() in ('true')
@@ -28,34 +30,70 @@ def subdirs(dname):
             if os.path.isdir(os.path.join(dname, d))]
 
 
+def distribute_run(npu,in_args):
+    print(f'---- distribute npu {npu} ----')
+    args = in_args
+    solver = Solver(args, npu)
+    loaders = Munch(src=get_train_loader(distribute=args.distribute,
+                                         root=args.train_img_dir,
+                                         which='source',
+                                         img_size=args.img_size,
+                                         batch_size=args.batch_size,
+                                         prob=args.randcrop_prob,
+                                         num_workers=args.num_workers),
+                    ref=get_train_loader(distribute=args.distribute,
+                                         root=args.train_img_dir,
+                                         which='reference',
+                                         img_size=args.img_size,
+                                         batch_size=args.batch_size,
+                                         prob=args.randcrop_prob,
+                                         num_workers=args.num_workers),
+                    val=get_test_loader(distribute=args.distribute,
+                                        root=args.val_img_dir,
+                                        img_size=args.img_size,
+                                        batch_size=args.val_batch_size,
+                                        shuffle=True,
+                                        num_workers=args.num_workers))
+    solver.train(loaders)
+
+
 def main(args):
     print(args)
     cudnn.benchmark = True
     torch.manual_seed(args.seed)
 
-    solver = Solver(args)
-
     if args.mode == 'train':
         assert len(subdirs(args.train_img_dir)) == args.num_domains
         assert len(subdirs(args.val_img_dir)) == args.num_domains
-        loaders = Munch(src=get_train_loader(root=args.train_img_dir,
-                                             which='source',
-                                             img_size=args.img_size,
-                                             batch_size=args.batch_size,
-                                             prob=args.randcrop_prob,
-                                             num_workers=args.num_workers),
-                        ref=get_train_loader(root=args.train_img_dir,
-                                             which='reference',
-                                             img_size=args.img_size,
-                                             batch_size=args.batch_size,
-                                             prob=args.randcrop_prob,
-                                             num_workers=args.num_workers),
-                        val=get_test_loader(root=args.val_img_dir,
-                                            img_size=args.img_size,
-                                            batch_size=args.val_batch_size,
-                                            shuffle=True,
-                                            num_workers=args.num_workers))
-        solver.train(loaders)
+
+
+        if args.distribute:
+            # 单机多卡
+            mp.spawn(distribute_run, nprocs=args.world_size, args=(args, ))
+        else:
+            # 单机单卡
+            solver = Solver(args, 0)
+            loaders = Munch(src=get_train_loader(distribute=args.distribute,
+                                                 root=args.train_img_dir,
+                                                 which='source',
+                                                 img_size=args.img_size,
+                                                 batch_size=args.batch_size,
+                                                 prob=args.randcrop_prob,
+                                                 num_workers=args.num_workers),
+                            ref=get_train_loader(distribute=args.distribute,
+                                                 root=args.train_img_dir,
+                                                 which='reference',
+                                                 img_size=args.img_size,
+                                                 batch_size=args.batch_size,
+                                                 prob=args.randcrop_prob,
+                                                 num_workers=args.num_workers),
+                            val=get_test_loader(distribute=args.distribute,
+                                                root=args.val_img_dir,
+                                                img_size=args.img_size,
+                                                batch_size=args.val_batch_size,
+                                                shuffle=True,
+                                                num_workers=args.num_workers))
+            solver.train(loaders)
     elif args.mode == 'sample':
         assert len(subdirs(args.src_dir)) == args.num_domains
         assert len(subdirs(args.ref_dir)) == args.num_domains
@@ -69,8 +107,11 @@ def main(args):
                                             batch_size=args.val_batch_size,
                                             shuffle=False,
                                             num_workers=args.num_workers))
+
+        solver = Solver(args)
         solver.sample(loaders)
     elif args.mode == 'eval':
+        solver = Solver(args)
         solver.evaluate()
     elif args.mode == 'align':
         from core.wing import align_faces
@@ -81,8 +122,6 @@ def main(args):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-
-
 
     # model arguments
     parser.add_argument('--img_size', type=int, default=256,
@@ -179,7 +218,6 @@ if __name__ == '__main__':
     parser.add_argument('--save_every', type=int, default=10000)
     parser.add_argument('--eval_every', type=int, default=50000)
 
-
     # ascend dist argument
     parser.add_argument('--device', default='npu', type=str, help='npu or gpu')
     parser.add_argument('--npu', type=int, default=0)
@@ -188,6 +226,7 @@ if __name__ == '__main__':
     parser.add_argument('--amp', default=False, action='store_true', help='use amp to train the model')
     parser.add_argument('--addr', default='127.0.0.1', type=str, help='master addr')
     parser.add_argument('--distribute', default=False, action='store_true', help='distribute training')
+    parser.add_argument('--npus', type=int, default=2)
     parser.add_argument('--device_list', default='0,1,2,3,4,5,6,7', type=str, help='device id list')
     parser.add_argument('--world_size', default=1, type=int, help='number of nodes for distributed training')
     parser.add_argument('--device_num', default=1, type=int, help='multi NPU parameter, GPU or CPU do not modify')

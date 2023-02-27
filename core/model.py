@@ -289,10 +289,14 @@ def build_model(args):
     else:
         device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     # net
-    generator = nn.DataParallel(Generator(device, args.img_size, args.style_dim, w_hpf=args.w_hpf))
-    mapping_network = nn.DataParallel(MappingNetwork(args.latent_dim, args.style_dim, args.num_domains))
-    style_encoder = nn.DataParallel(StyleEncoder(args.img_size, args.style_dim, args.num_domains))
-    discriminator = nn.DataParallel(Discriminator(args.img_size, args.num_domains))
+    # generator = nn.DataParallel(Generator(device, args.img_size, args.style_dim, w_hpf=args.w_hpf))
+    # mapping_network = nn.DataParallel(MappingNetwork(args.latent_dim, args.style_dim, args.num_domains))
+    # style_encoder = nn.DataParallel(StyleEncoder(args.img_size, args.style_dim, args.num_domains))
+    # discriminator = nn.DataParallel(Discriminator(args.img_size, args.num_domains))
+    generator = Generator(device, args.img_size, args.style_dim, w_hpf=args.w_hpf)
+    mapping_network = MappingNetwork(args.latent_dim, args.style_dim, args.num_domains)
+    style_encoder = StyleEncoder(args.img_size, args.style_dim, args.num_domains)
+    discriminator = Discriminator(args.img_size, args.num_domains)
 
     # nets_ema
     generator_ema = copy.deepcopy(generator)
@@ -308,8 +312,9 @@ def build_model(args):
                      style_encoder=style_encoder_ema)
 
     if args.w_hpf > 0:
-        fan = nn.DataParallel(FAN(device=device, fname_pretrained=args.wing_path).eval())
-        fan.get_heatmap = fan.module.get_heatmap
+        # fan = nn.DataParallel(FAN(device=device, fname_pretrained=args.wing_path).eval())
+        fan = FAN(device=device, fname_pretrained=args.wing_path).eval()
+        # fan.get_heatmap = fan.module.get_heatmap
         nets.fan = fan
         nets_ema.fan = fan
 

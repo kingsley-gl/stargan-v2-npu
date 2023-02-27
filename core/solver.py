@@ -25,21 +25,30 @@ from metrics.eval import calculate_metrics
 import torch_npu
 from apex import amp
 
+
 class Solver(nn.Module):
-    def __init__(self, args):
+    def __init__(self, args, rank=-1):
         super().__init__()
         self.args = args
         if self.args.device == 'npu':
             self.device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
         else:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        torch.npu.set_device(self.args.npu)
+        self.rank = rank
+        # torch_npu.npu.set_device(self.args.npu)
         if self.args.distribute:
-            torch_npu.npu.set_device(self.args.rank)
+            print('init process group...')
+            loc = f'npu:{self.rank}'
+            torch_npu.npu.set_device(loc)
             torch.distributed.init_process_group(backend=self.args.dist_backend,
                                                  world_size=self.args.world_size,
-                                                 rank=self.args.rank)
+                                                 rank=self.rank)
+        else:
+            torch_npu.npu.set_device(self.rank)
+        print(f'rank {self.rank} start build model')
         self.nets, self.nets_ema = build_model(args)
+        print(f'rank {self.rank} end build model')
+
         # below setattrs are to make networks be children of Solver, e.g., for self.to(self.device)
         for name, module in self.nets.items():
             utils.print_network(module, name)
@@ -57,18 +66,23 @@ class Solver(nn.Module):
                     lr=args.f_lr if net == 'mapping_network' else args.lr,
                     betas=[args.beta1, args.beta2],
                     weight_decay=args.weight_decay)
-
-
+                if self.args.amp:
+                    self.nets[net].to(self.device)
+                    self.nets[net], self.optims[net] = amp.initialize(self.nets[net], self.optims[net],
+                                                                      opt_level='O1', loss_scale=32.0)
+                if self.args.distribute:
+                    self.nets[net] = nn.parallel.DistributedDataParallel(self.nets[net], device_ids=[self.args.rank],
+                                                                         broadcast_buffers=False, find_unused_parameters=True)
 
             self.ckptios = [
-                CheckpointIO(r'/'.join([args.checkpoint_dir, '{:06d}_nets.ckpt']), device=self.device,
-                             data_parallel=True, **self.nets),
-                CheckpointIO(r'/'.join([args.checkpoint_dir, '{:06d}_nets_ema.ckpt']), device=self.device,
-                             data_parallel=True, **self.nets_ema),
-                CheckpointIO(r'/'.join([args.checkpoint_dir, '{:06d}_optims.ckpt']), device=self.device, **self.optims)]
+                CheckpointIO(r'/'.join([args.checkpoint_dir, f'rank_{str(self.rank).zfill(4)}', '{:06d}_nets.ckpt']), device=self.device,
+                             data_parallel=self.args.distribute, **self.nets),
+                CheckpointIO(r'/'.join([args.checkpoint_dir, f'rank_{str(self.rank).zfill(4)}','{:06d}_nets_ema.ckpt']), device=self.device,
+                             data_parallel=self.args.distribute, **self.nets_ema),
+                CheckpointIO(r'/'.join([args.checkpoint_dir, f'rank_{str(self.rank).zfill(4)}','{:06d}_optims.ckpt']), device=self.device, **self.optims)]
         else:
             self.ckptios = [CheckpointIO(r'/'.join([args.checkpoint_dir, '{:06d}_nets_ema.ckpt']), device=self.device,
-                                         data_parallel=True, **self.nets_ema)]
+                                         data_parallel=self.args.distribute, **self.nets_ema)]
 
         self.to(self.device)
         for name, network in self.named_children():
@@ -113,15 +127,18 @@ class Solver(nn.Module):
         for i in range(args.resume_iter, args.total_iters):
             # fetch images and labels
             # ------------- preprocess input data
+            print('preprocess input data ...')
             inputs = next(fetcher)
+            print('inputs data...')
             x_real, y_org = inputs.x_src, inputs.y_src
             x_ref, x_ref2, y_trg = inputs.x_ref, inputs.x_ref2, inputs.y_ref
             z_trg, z_trg2 = inputs.z_trg, inputs.z_trg2
 
-            # masks = nets.fan.get_heatmap(x_real) if args.w_hpf > 0 else None
-            masks = None
+            masks = nets.fan.get_heatmap(x_real) if args.w_hpf > 0 else None
+            # masks = None
 
             # train the discriminator
+            print('train the discriminator ...')
             d_loss, d_losses_latent = compute_d_loss(nets, args, x_real, y_org, y_trg, z_trg=z_trg, masks=masks)
             self._reset_grad()
             d_loss.backward()
@@ -134,6 +151,7 @@ class Solver(nn.Module):
             optims.discriminator.step()
 
             # train the generator
+            # print('train the generator ...')
             g_loss, g_losses_latent = compute_g_loss(
                 nets, args, x_real, y_org, y_trg, z_trgs=[z_trg, z_trg2], masks=masks)
             self._reset_grad()
@@ -149,11 +167,13 @@ class Solver(nn.Module):
             optims.generator.step()
 
             # compute moving average of network parameters
+            # print('compute moving average of network parameters ...')
             moving_average(nets.generator, nets_ema.generator, beta=0.999)
             moving_average(nets.mapping_network, nets_ema.mapping_network, beta=0.999)
             moving_average(nets.style_encoder, nets_ema.style_encoder, beta=0.999)
 
             # decay weight for diversity sensitive loss
+            # print('decay weight for diversity sensitive loss ...')
             if args.lambda_ds > 0:
                 args.lambda_ds -= (initial_lambda_ds / args.ds_iter)
 
@@ -178,6 +198,7 @@ class Solver(nn.Module):
 
             # save model checkpoints
             if (i + 1) % args.save_every == 0:
+                print('save checkpoints...')
                 self._save_checkpoint(step=i + 1)
 
             # compute FID and LPIPS if necessary
@@ -231,7 +252,6 @@ def compute_d_loss(nets, args, x_real, y_org, y_trg, z_trg=None, x_ref=None, mas
         x_fake = nets.generator(x_real, s_trg, masks=masks)
     out = nets.discriminator(x_fake, y_trg)
     loss_fake = adv_loss(out, 0)
-
     loss = loss_real + loss_fake + args.lambda_reg * loss_reg
     return loss, Munch(real=loss_real.item(),
                        fake=loss_fake.item(),
@@ -297,9 +317,6 @@ def adv_loss(logits, target):
 def r1_reg(d_out, x_in):
     # zero-centered gradient penalty for real images
     batch_size = x_in.size(0)
-    with torch.no_grad():
-        d_out_sum = d_out.sum()
-    print(d_out_sum)
     grad_dout = torch.autograd.grad(
         outputs=d_out.sum(), inputs=x_in,
         # outputs=d_out_sum, inputs=x_in,

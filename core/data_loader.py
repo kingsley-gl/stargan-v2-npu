@@ -7,7 +7,7 @@ This work is licensed under the Creative Commons Attribution-NonCommercial
 http://creativecommons.org/licenses/by-nc/4.0/ or send a letter to
 Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 """
-
+import pdb
 from pathlib import Path
 from itertools import chain
 import os
@@ -127,7 +127,7 @@ def _make_balanced_sampler(labels):
 #                                drop_last=True)
 
 
-def get_train_loader(root, which='source', img_size=256,
+def get_train_loader(root, distribute=False, which='source', img_size=256,
                      batch_size=8, prob=0.5, num_workers=4):
     print('Preparing DataLoader to fetch %s images '
           'during the training phase...' % which)
@@ -156,15 +156,35 @@ def get_train_loader(root, which='source', img_size=256,
         raise NotImplementedError
 
     sampler = _make_balanced_sampler(dataset.targets)
-    return data.DataLoader(dataset=dataset,
-                           batch_size=batch_size,
-                           sampler=sampler,
-                           num_workers=num_workers,
-                           pin_memory=True,
-                           drop_last=True)
+    if distribute:
+        train_sampler = data.distributed.DistributedSampler(dataset)
 
+        data_loader = data.DataLoader(
+            dataset=dataset,
+            batch_size=batch_size,
+            sampler=train_sampler,
+            num_workers=num_workers,
+            pin_memory=False,
+            shuffle=(train_sampler is None),
+            drop_last=True
+        )
 
-def get_eval_loader(root, img_size=256, batch_size=32,
+        return data_loader
+    else:
+        return data.DataLoader(dataset=dataset,
+                               batch_size=batch_size,
+                               sampler=sampler,
+                               num_workers=num_workers,
+                               pin_memory=True,
+                               drop_last=True)
+    # return data.DataLoader(dataset=dataset,
+    #                        batch_size=batch_size,
+    #                        sampler=sampler,
+    #                        num_workers=num_workers,
+    #                        pin_memory=True,
+    #                        drop_last=True)
+
+def get_eval_loader(root, distribute=False, img_size=256, batch_size=32,
                     imagenet_normalize=True, shuffle=True,
                     num_workers=4, drop_last=False):
     print('Preparing DataLoader for the evaluation phase...')
@@ -193,7 +213,7 @@ def get_eval_loader(root, img_size=256, batch_size=32,
                            drop_last=drop_last)
 
 
-def get_test_loader(root, img_size=256, batch_size=32,
+def get_test_loader(root, distribute=False, img_size=256, batch_size=32,
                     shuffle=True, num_workers=4):
     print('Preparing DataLoader for the generation phase...')
     transform = transforms.Compose([
@@ -226,6 +246,10 @@ class InputFetcher:
             assert self.iter is not None
             x, y = next(self.iter)
         except (AttributeError, StopIteration, AssertionError):
+            # if self.mode == 'train':
+            #     print('loader train data')
+            #     for data in self.loader:
+            #         print(data)
             self.iter = iter(self.loader)
             x, y = next(self.iter)
         return x, y
@@ -240,7 +264,9 @@ class InputFetcher:
         return x, x2, y
 
     def __next__(self):
+        print(f'{self.mode} before next input data...')
         x, y = self._fetch_inputs()
+        print(f'{self.mode} after next input data...')
         if self.mode == 'train':
             x_ref, x_ref2, y_ref = self._fetch_refs()
             z_trg = torch.randn(x.size(0), self.latent_dim)

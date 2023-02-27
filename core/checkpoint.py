@@ -28,10 +28,11 @@ class CheckpointIO(object):
         print('Saving checkpoint into %s...' % fname)
         outdict = {}
         for name, module in self.module_dict.items():
-            if self.data_parallel:
-                outdict[name] = module.module.state_dict()
-            else:
-                outdict[name] = module.state_dict()
+            # if self.data_parallel:
+            #     outdict[name] = module.module.state_dict()
+            # else:
+            #     outdict[name] = module.state_dict()
+            outdict[name] = module.state_dict()
 
         torch.save(outdict, fname)
 
