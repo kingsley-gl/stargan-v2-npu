@@ -177,12 +177,6 @@ def get_train_loader(root, distribute=False, which='source', img_size=256,
                                num_workers=num_workers,
                                pin_memory=True,
                                drop_last=True)
-    # return data.DataLoader(dataset=dataset,
-    #                        batch_size=batch_size,
-    #                        sampler=sampler,
-    #                        num_workers=num_workers,
-    #                        pin_memory=True,
-    #                        drop_last=True)
 
 def get_eval_loader(root, distribute=False, img_size=256, batch_size=32,
                     imagenet_normalize=True, shuffle=True,
@@ -264,9 +258,7 @@ class InputFetcher:
         return x, x2, y
 
     def __next__(self):
-        print(f'{self.mode} before next input data...')
         x, y = self._fetch_inputs()
-        print(f'{self.mode} after next input data...')
         if self.mode == 'train':
             x_ref, x_ref2, y_ref = self._fetch_refs()
             z_trg = torch.randn(x.size(0), self.latent_dim)

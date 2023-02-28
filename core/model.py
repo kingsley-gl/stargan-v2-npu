@@ -284,10 +284,7 @@ class Discriminator(nn.Module):
 
 
 def build_model(args):
-    if args.device == 'npu':
-        device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
-    else:
-        device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
     # net
     # generator = nn.DataParallel(Generator(device, args.img_size, args.style_dim, w_hpf=args.w_hpf))
     # mapping_network = nn.DataParallel(MappingNetwork(args.latent_dim, args.style_dim, args.num_domains))

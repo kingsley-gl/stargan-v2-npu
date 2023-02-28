@@ -15,6 +15,7 @@ from tqdm import tqdm
 
 import numpy as np
 import torch
+import torch_npu
 
 from metrics.fid import calculate_fid_given_paths
 from metrics.lpips import calculate_lpips_given_images
@@ -26,7 +27,7 @@ from core import utils
 def calculate_metrics(nets, args, step, mode):
     print('Calculating evaluation metrics...')
     assert mode in ['latent', 'reference']
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
 
     domains = os.listdir(args.val_img_dir)
     domains.sort()

@@ -12,6 +12,7 @@ import os
 import argparse
 
 import torch
+import torch_npu
 import torch.nn as nn
 import numpy as np
 from torchvision import models
@@ -62,7 +63,7 @@ def frechet_distance(mu, cov, mu2, cov2):
 @torch.no_grad()
 def calculate_fid_given_paths(paths, img_size=256, batch_size=50):
     print('Calculating FID given paths %s and %s...' % (paths[0], paths[1]))
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
     inception = InceptionV3().eval().to(device)
     loaders = [get_eval_loader(path, img_size, batch_size) for path in paths]
 

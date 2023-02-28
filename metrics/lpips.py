@@ -9,6 +9,7 @@ Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 """
 
 import torch
+import torch_npu
 import torch.nn as nn
 from torchvision import models
 
@@ -85,7 +86,7 @@ class LPIPS(nn.Module):
 @torch.no_grad()
 def calculate_lpips_given_images(group_of_images):
     # group_of_images = [torch.randn(N, C, H, W) for _ in range(10)]
-    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
     lpips = LPIPS().eval().to(device)
     lpips_values = []
     num_rand_outputs = len(group_of_images)

@@ -305,7 +305,7 @@ def np2tensor(image):
 
 class FaceAligner():
     def __init__(self, fname_wing, fname_celeba_mean, output_size):
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
         self.fan = FAN(fname_pretrained=fname_wing).to(self.device).eval()
         scale = output_size // 256
         self.CELEB_REF = np.float32(np.load(fname_celeba_mean)['mean']) * scale

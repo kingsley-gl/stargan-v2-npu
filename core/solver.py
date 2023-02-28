@@ -30,10 +30,7 @@ class Solver(nn.Module):
     def __init__(self, args, rank=-1):
         super().__init__()
         self.args = args
-        if self.args.device == 'npu':
-            self.device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
-        else:
-            self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        self.device = torch.device('npu' if torch_npu.npu.is_available() else 'cpu')
         self.rank = rank
         # torch_npu.npu.set_device(self.args.npu)
         if self.args.distribute:
@@ -45,9 +42,8 @@ class Solver(nn.Module):
                                                  rank=self.rank)
         else:
             torch_npu.npu.set_device(self.rank)
-        print(f'rank {self.rank} start build model')
+        print(f'rank {self.rank} start build model...')
         self.nets, self.nets_ema = build_model(args)
-        print(f'rank {self.rank} end build model')
 
         # below setattrs are to make networks be children of Solver, e.g., for self.to(self.device)
         for name, module in self.nets.items():
@@ -71,8 +67,10 @@ class Solver(nn.Module):
                     self.nets[net], self.optims[net] = amp.initialize(self.nets[net], self.optims[net],
                                                                       opt_level='O1', loss_scale=32.0)
                 if self.args.distribute:
-                    self.nets[net] = nn.parallel.DistributedDataParallel(self.nets[net], device_ids=[self.args.rank],
-                                                                         broadcast_buffers=False, find_unused_parameters=True)
+                    self.nets[net] = nn.parallel.DistributedDataParallel(self.nets[net], device_ids=[self.rank],
+                                                                         broadcast_buffers=False,
+                                                                         find_unused_parameters=True
+                                                                         )
 
             self.ckptios = [
                 CheckpointIO(r'/'.join([args.checkpoint_dir, f'rank_{str(self.rank).zfill(4)}', '{:06d}_nets.ckpt']), device=self.device,
@@ -127,9 +125,9 @@ class Solver(nn.Module):
         for i in range(args.resume_iter, args.total_iters):
             # fetch images and labels
             # ------------- preprocess input data
-            print('preprocess input data ...')
+            # print('preprocess input data ...')
             inputs = next(fetcher)
-            print('inputs data...')
+            # print('inputs data...')
             x_real, y_org = inputs.x_src, inputs.y_src
             x_ref, x_ref2, y_trg = inputs.x_ref, inputs.x_ref2, inputs.y_ref
             z_trg, z_trg2 = inputs.z_trg, inputs.z_trg2
@@ -138,7 +136,7 @@ class Solver(nn.Module):
             # masks = None
 
             # train the discriminator
-            print('train the discriminator ...')
+            # print('train the discriminator ...')
             d_loss, d_losses_latent = compute_d_loss(nets, args, x_real, y_org, y_trg, z_trg=z_trg, masks=masks)
             self._reset_grad()
             d_loss.backward()

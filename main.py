@@ -11,6 +11,7 @@ Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 import os
 import argparse
 
+import torch_npu.npu
 from munch import Munch
 from torch.backends import cudnn
 import torch
@@ -30,7 +31,7 @@ def subdirs(dname):
             if os.path.isdir(os.path.join(dname, d))]
 
 
-def distribute_run(npu,in_args):
+def distribute_run(npu, in_args):
     print(f'---- distribute npu {npu} ----')
     args = in_args
     solver = Solver(args, npu)
@@ -66,10 +67,9 @@ def main(args):
         assert len(subdirs(args.train_img_dir)) == args.num_domains
         assert len(subdirs(args.val_img_dir)) == args.num_domains
 
-
         if args.distribute:
             # 单机多卡
-            mp.spawn(distribute_run, nprocs=args.world_size, args=(args, ))
+            mp.spawn(distribute_run, nprocs=args.world_size, args=(args,))
         else:
             # 单机单卡
             solver = Solver(args, 0)
@@ -219,24 +219,28 @@ if __name__ == '__main__':
     parser.add_argument('--eval_every', type=int, default=50000)
 
     # ascend dist argument
-    parser.add_argument('--device', default='npu', type=str, help='npu or gpu')
+    # parser.add_argument('--device', default='npu', type=str, help='npu or gpu')
     parser.add_argument('--npu', type=int, default=0)
     parser.add_argument('--rank', type=int, default=0)
+    parser.add_argument('--nnode', type=int, default=1,
+                        help='distributed training machine node nums. single is 1')  # 分布式训练节点机器数
+    parser.add_argument('--nproc_per_node', type=int, default=1,
+                        help='distributed training machine processes per node')  # 分布式训练单节点进程数（相当于npu数量）
+    parser.add_argument('--world_size', default=-1, type=int,
+                        help='number of processes for distributed training')  # 分布式训练全局进程数
 
-    parser.add_argument('--amp', default=False, action='store_true', help='use amp to train the model')
+    parser.add_argument('--amp', default=False, action='store_true', help='use amp to train the model')  # 开启混合精度
     parser.add_argument('--addr', default='127.0.0.1', type=str, help='master addr')
-    parser.add_argument('--distribute', default=False, action='store_true', help='distribute training')
-    parser.add_argument('--npus', type=int, default=2)
-    parser.add_argument('--device_list', default='0,1,2,3,4,5,6,7', type=str, help='device id list')
-    parser.add_argument('--world_size', default=1, type=int, help='number of nodes for distributed training')
-    parser.add_argument('--device_num', default=1, type=int, help='multi NPU parameter, GPU or CPU do not modify')
+    parser.add_argument('--distribute', default=False, action='store_true', help='distribute training')  # 开启分布式训练
+
     parser.add_argument('--dist_backend', default='hccl', type=str,
                         help='distributed backend')
-    parser.add_argument('--sync-bn', action='store_true', help='use SyncBatchNorm, only available in DDP mode')
-    parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
 
     args = parser.parse_args()
     os.environ['MASTER_ADDR'] = args.addr
     os.environ['MASTER_PORT'] = '29688'
-    args.npu_ddp = (args.device_num > 1 or args.world_size > 1)
+    if args.world_size == -1:
+        args.world_size = args.nnode * torch_npu.npu.device_count()
+    args.npu_ddp = args.world_size > 1
+
     main(args)
