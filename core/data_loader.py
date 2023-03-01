@@ -239,22 +239,24 @@ class InputFetcher:
         try:
             assert self.iter is not None
             x, y = next(self.iter)
-        except (AttributeError, StopIteration, AssertionError):
-            # if self.mode == 'train':
-            #     print('loader train data')
-            #     for data in self.loader:
-            #         print(data)
+        except (AttributeError, AssertionError):
             self.iter = iter(self.loader)
             x, y = next(self.iter)
+        except StopIteration:
+            self.iter = iter(self.loader)
+            raise StopIteration
         return x, y
 
     def _fetch_refs(self):
         try:
             assert self.iter_ref is not None
             x, x2, y = next(self.iter_ref)
-        except (AttributeError, StopIteration, AssertionError):
+        except (AttributeError, AssertionError):
             self.iter_ref = iter(self.loader_ref)
             x, x2, y = next(self.iter_ref)
+        except StopIteration:
+            self.iter_ref = iter(self.loader_ref)
+            raise StopIteration
         return x, x2, y
 
     def __iter__(self):
@@ -262,6 +264,10 @@ class InputFetcher:
 
     def __len__(self):
         return len(self.loader)
+
+    def rewind(self):
+        self.iter = iter(self.loader)
+        self.iter_ref = iter(self.loader_ref)
 
     def __next__(self):
         x, y = self._fetch_inputs()

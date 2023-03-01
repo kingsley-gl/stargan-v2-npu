@@ -25,7 +25,7 @@ from metrics.eval import calculate_metrics
 import torch_npu
 from apex import amp
 from core.averageMeter import AverageMeter
-
+from concurrent.futures import ThreadPoolExecutor
 
 class Solver(nn.Module):
     def __init__(self, args, rank=-1):
@@ -135,6 +135,8 @@ class Solver(nn.Module):
             if self.args.distribute:
                 loaders.src[0].set_epoch(epoch)
                 loaders.ref[0].set_epoch(epoch)
+            if self.rank <= 0:
+                print('epoch: ---',epoch)
 
             for i, inputs in enumerate(fetcher):
                 # fetch images and labels
