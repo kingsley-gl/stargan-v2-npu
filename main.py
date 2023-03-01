@@ -156,7 +156,7 @@ if __name__ == '__main__':
                         help='Number of total iterations')
     parser.add_argument('--resume_iter', type=int, default=0,
                         help='Iterations to resume training/testing')
-    parser.add_argument('--batch_size', type=int, default=8,
+    parser.add_argument('--batch_size', type=int, default=24,
                         help='Batch size for training')
     parser.add_argument('--val_batch_size', type=int, default=32,
                         help='Batch size for validation')
@@ -215,12 +215,14 @@ if __name__ == '__main__':
     # step size
     parser.add_argument('--print_every', type=int, default=10)
     parser.add_argument('--sample_every', type=int, default=5000)
-    parser.add_argument('--save_every', type=int, default=10000)
+    parser.add_argument('--save_every', type=int, default=1)  # save every epoch 每隔多少轮次保存一次
     parser.add_argument('--eval_every', type=int, default=50000)
+
 
     # ascend dist argument
     # parser.add_argument('--device', default='npu', type=str, help='npu or gpu')
     parser.add_argument('--npu', type=int, default=0)
+    parser.add_argument('--epoch', type=int, default=30)
     parser.add_argument('--rank', type=int, default=0)
     parser.add_argument('--nnode', type=int, default=1,
                         help='distributed training machine node nums. single is 1')  # 分布式训练节点机器数

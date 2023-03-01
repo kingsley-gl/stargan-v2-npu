@@ -169,7 +169,7 @@ def get_train_loader(root, distribute=False, which='source', img_size=256,
             drop_last=True
         )
 
-        return data_loader
+        return train_sampler, data_loader
     else:
         return data.DataLoader(dataset=dataset,
                                batch_size=batch_size,
@@ -256,6 +256,12 @@ class InputFetcher:
             self.iter_ref = iter(self.loader_ref)
             x, x2, y = next(self.iter_ref)
         return x, x2, y
+
+    def __iter__(self):
+        return self
+
+    def __len__(self):
+        return len(self.loader)
 
     def __next__(self):
         x, y = self._fetch_inputs()
