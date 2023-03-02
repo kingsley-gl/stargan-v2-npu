@@ -10,7 +10,7 @@ Creative Commons, PO Box 1866, Mountain View, CA 94042, USA.
 
 import os
 import torch
-
+import torch_npu
 
 class CheckpointIO(object):
     def __init__(self, fname_template, device, data_parallel=False, **kwargs):
@@ -40,16 +40,18 @@ class CheckpointIO(object):
         fname = self.fname_template.format(step)
         assert os.path.exists(fname), fname + ' does not exist!'
         print('Loading checkpoint from %s...' % fname)
-        if self.device == 'npu':
-            if torch_npu.npu.is_available():
-                module_dict = torch.load(fname, map_location=torch.device('npu'))
-            else:
-                module_dict = torch.load(fname, map_location=torch.device('cpu'))
-        else:
-            if torch.cuda.is_available():
-                module_dict = torch.load(fname)
-            else:
-                module_dict = torch.load(fname, map_location=torch.device('cpu'))
+        # if self.device == 'npu':
+        #     if torch_npu.npu.is_available():
+        #         module_dict = torch.load(fname, map_location=torch.device('npu'))
+        #     else:
+        #         module_dict = torch.load(fname, map_location=torch.device('cpu'))
+        # else:
+        #     if torch.cuda.is_available():
+        #         module_dict = torch.load(fname)
+        #     else:
+        #         module_dict = torch.load(fname, map_location=torch.device('cpu'))
+
+        module_dict = torch.load(fname, map_location=self.device)
 
         for name, module in self.module_dict.items():
             if self.data_parallel:

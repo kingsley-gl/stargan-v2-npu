@@ -84,6 +84,13 @@ class Solver(nn.Module):
                 CheckpointIO(r'/'.join([args.checkpoint_dir, f'rank_{str(self.rank).zfill(4)}', '{:06d}_optims.ckpt']),
                              device=self.device, **self.optims)]
         else:
+            # for net in self.nets.keys():
+            #
+            # if self.args.amp:
+            #     self.nets[net].to(self.device)
+            #     self.nets[net], self.optims[net] = amp.initialize(self.nets[net], self.optims[net], opt_level='O1',
+            #                                                       loss_scale=32.0)
+
             self.ckptios = [CheckpointIO(r'/'.join([args.checkpoint_dir, '{:06d}_nets_ema.ckpt']), device=self.device,
                                          data_parallel=self.args.distribute, **self.nets_ema)]
 

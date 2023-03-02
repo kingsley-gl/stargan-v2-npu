@@ -56,8 +56,8 @@ class LPIPS(nn.Module):
             self.lpips_weights.append(Conv1x1(channels, 1))
         self._load_lpips_weights()
         # imagenet normalization for range [-1, 1]
-        self.mu = torch.tensor([-0.03, -0.088, -0.188]).view(1, 3, 1, 1).cuda()
-        self.sigma = torch.tensor([0.458, 0.448, 0.450]).view(1, 3, 1, 1).cuda()
+        self.mu = torch.tensor([-0.03, -0.088, -0.188]).view(1, 3, 1, 1).npu()
+        self.sigma = torch.tensor([0.458, 0.448, 0.450]).view(1, 3, 1, 1).npu()
 
     def _load_lpips_weights(self):
         own_state_dict = self.state_dict()

@@ -108,10 +108,10 @@ def main(args):
                                             shuffle=False,
                                             num_workers=args.num_workers))
 
-        solver = Solver(args)
+        solver = Solver(args, 0)
         solver.sample(loaders)
     elif args.mode == 'eval':
-        solver = Solver(args)
+        solver = Solver(args, 0)
         solver.evaluate()
     elif args.mode == 'align':
         from core.wing import align_faces
